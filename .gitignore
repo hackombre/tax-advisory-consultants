@@ -1,0 +1,23 @@
+# --- Python / back ---
+back/.env
+back/__pycache__/
+back/**/__pycache__/
+*.pyc
+back/.venv/
+back/venv/
+
+# --- Node / front ---
+front/node_modules/
+front/.next/
+front/.env
+front/.env.local
+front/.env*.local
+front/public/uploads/*
+!front/public/uploads/.gitkeep
+front/data/login-attempts.json
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

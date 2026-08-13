@@ -1,0 +1,346 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600&family=DM+Sans:wght@300;400;500&display=swap");
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600&family=DM+Sans:wght@300;400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0");
+
+
+@theme inline {
+  --color-background: #ffffff;
+  --color-foreground: #0b1b3a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0b1b3a;
+  --color-primary: #0b1b3a;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #16295a;
+  --color-secondary-foreground: #ffffff;
+  --color-muted: #f4f6fb;
+  --color-muted-foreground: #5c6b8a;
+  --color-accent: #2a4d8f;
+  --color-accent-foreground: #ffffff;
+  --color-border: rgba(11, 27, 58, 0.08);
+  --color-ring: #2a4d8f;
+
+  --color-navy: #0b1b3a;
+  --color-navy-light: #16295a;
+  --color-navy-deep: #060f24;
+
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+
+  --radius: 0.25rem;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+
+html {
+  overflow-x: hidden;
+}
+
+body {
+  background-color: #ffffff;
+  color: #0b1b3a;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(11, 27, 58, 0.35);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(11, 27, 58, 0.6);
+}
+
+/* Rendered markdown content (actualités / publications / documentation) */
+.prose-content {
+  line-height: 1.75;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.prose-content * {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.prose-content p {
+  margin-bottom: 1.25em;
+}
+.prose-content h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #0b1b3a;
+  margin-top: 2.5em;
+  margin-bottom: 0.75em;
+}
+.prose-content h3 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #0b1b3a;
+  margin-top: 2em;
+  margin-bottom: 0.6em;
+}
+.prose-content ul,
+.prose-content ol {
+  margin: 0 0 1.25em 1.5em;
+}
+.prose-content ul {
+  list-style: disc;
+}
+.prose-content ol {
+  list-style: decimal;
+}
+.prose-content li {
+  margin-bottom: 0.4em;
+}
+.prose-content blockquote {
+  border-left: 3px solid rgba(11, 27, 58, 0.15);
+  padding-left: 1em;
+  color: rgba(11, 27, 58, 0.6);
+  font-style: italic;
+  margin: 1.5em 0;
+}
+.prose-content strong {
+  font-weight: 600;
+  color: #0b1b3a;
+}
+.prose-content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.prose-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 1rem;
+  margin: 1.5em 0;
+}
+.prose-content iframe {
+  max-width: 100%;
+}
+.prose-content code {
+  background: rgba(11, 27, 58, 0.06);
+  padding: 0.15em 0.4em;
+  border-radius: 0.35em;
+  font-size: 0.9em;
+  overflow-wrap: break-word;
+}
+
+/* --- Rich text editor (Quill) --- */
+.rich-editor .ql-toolbar {
+  border-radius: 0.75rem 0.75rem 0 0;
+  border-color: rgba(11, 27, 58, 0.15);
+  background: #fafbfd;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 4px;
+  padding: 10px 12px 12px;
+}
+.rich-editor .ql-toolbar .ql-formats {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 !important;
+  padding: 4px 10px 4px 0;
+  border-right: 1px solid rgba(11, 27, 58, 0.08);
+}
+.rich-editor .ql-toolbar .ql-formats:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+/* Distinct, tinted "insert element" cluster — video / audio / document / image */
+.rich-editor .ql-toolbar .ql-formats:has(.ql-customVideo) {
+  position: relative;
+  margin-top: 14px !important;
+  padding: 6px 10px;
+  background: rgba(42, 77, 143, 0.06);
+  border: 1px solid rgba(42, 77, 143, 0.12);
+  border-radius: 0.6rem;
+  gap: 4px;
+}
+.rich-editor .ql-toolbar .ql-formats:has(.ql-customVideo)::before {
+  content: "Insérer un élément";
+  position: absolute;
+  top: -14px;
+  left: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(42, 77, 143, 0.55);
+  white-space: nowrap;
+}
+.rich-editor .ql-container {
+  border-radius: 0 0 0.75rem 0.75rem;
+  border-color: rgba(11, 27, 58, 0.15);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  min-height: 260px;
+}
+.rich-editor .ql-editor {
+  min-height: 260px;
+}
+.rich-editor .ql-editor img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  margin: 0.75em 0;
+}
+.rich-editor .ql-editor .embedded-video,
+.rich-editor .ql-editor .embedded-audio {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.75em 0;
+  border-radius: 0.75rem;
+}
+.rich-editor .ql-editor .embedded-video {
+  background: #000;
+  max-height: 24rem;
+  object-fit: contain;
+}
+.rich-editor .ql-editor.ql-blank::before {
+  font-style: normal;
+  color: rgba(11, 27, 58, 0.35);
+}
+
+/* Custom toolbar buttons (video / audio / document) */
+.ql-toolbar .ql-customVideo,
+.ql-toolbar .ql-customAudio,
+.ql-toolbar .ql-customDocument {
+  width: 30px !important;
+  height: 28px !important;
+  font-size: 15px;
+  border-radius: 0.4rem;
+  transition: background-color 0.15s ease;
+}
+.ql-toolbar .ql-customVideo:hover,
+.ql-toolbar .ql-customAudio:hover,
+.ql-toolbar .ql-customDocument:hover {
+  background: rgba(42, 77, 143, 0.12);
+}
+.ql-toolbar .ql-customVideo::before {
+  content: "🎬";
+}
+.ql-toolbar .ql-customAudio::before {
+  content: "🎵";
+}
+.ql-toolbar .ql-customDocument::before {
+  content: "📄";
+}
+
+/* Font whitelist (editor + rendered content) */
+.ql-font-serif,
+.prose-content .ql-font-serif {
+  font-family: Georgia, "Times New Roman", serif;
+}
+.ql-font-monospace,
+.prose-content .ql-font-monospace {
+  font-family: "Courier New", monospace;
+}
+.ql-font-display,
+.prose-content .ql-font-display {
+  font-family: var(--font-display);
+}
+
+/* Size whitelist (editor + rendered content) */
+.ql-size-small,
+.prose-content .ql-size-small {
+  font-size: 0.75em;
+}
+.ql-size-large,
+.prose-content .ql-size-large {
+  font-size: 1.5em;
+}
+.ql-size-huge,
+.prose-content .ql-size-huge {
+  font-size: 2.25em;
+}
+
+/* Embedded media inside published content */
+.prose-content .embedded-video,
+.prose-content .embedded-audio {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 1.5em 0;
+  border-radius: 1rem;
+}
+.prose-content .embedded-video {
+  background: #000;
+  max-height: 32rem;
+  object-fit: contain;
+}
+.prose-content .embedded-document {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  margin: 0.5em 0;
+  padding: 0.6em 1em;
+  border: 1px solid rgba(11, 27, 58, 0.15);
+  border-radius: 0.6rem;
+  background: rgba(11, 27, 58, 0.03);
+  color: #0b1b3a;
+  font-size: 0.9em;
+  font-weight: 500;
+  text-decoration: none;
+}
+.prose-content .embedded-document::before {
+  content: "📄";
+}
+.prose-content .embedded-document:hover {
+  border-color: rgba(42, 77, 143, 0.4);
+  color: #2a4d8f;
+}
+
+/* Numbered headings inside published content (visual counters, matches the sommaire) */
+.prose-content {
+  counter-reset: h2counter;
+}
+.prose-content h2 {
+  counter-increment: h2counter;
+  counter-reset: h3counter;
+}
+.prose-content h3 {
+  counter-increment: h3counter;
+}
+.prose-content h2::before {
+  content: counter(h2counter) ". ";
+  color: #2a4d8f;
+  margin-right: 0.4em;
+  font-weight: 600;
+}
+.prose-content h3::before {
+  content: counter(h2counter) "." counter(h3counter) " ";
+  color: #2a4d8f;
+  margin-right: 0.4em;
+  font-weight: 600;
+}
