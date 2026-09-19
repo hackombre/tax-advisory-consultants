@@ -12,8 +12,11 @@ front/.next/
 front/.env
 front/.env.local
 front/.env*.local
-front/public/uploads/*
-!front/public/uploads/.gitkeep
+
+# Les contenus administratifs sont volontairement versionnés
+# front/data/posts.json
+# front/public/uploads/
+
 front/data/login-attempts.json
 
 # --- OS / editor ---
