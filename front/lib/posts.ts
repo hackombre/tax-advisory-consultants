@@ -2,7 +2,10 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 
-export type PostCategory = "actualite" | "publication" | "documentation";
+export type PostCategory =
+  | "actualite"
+  | "publication"
+  | "documentation";
 
 export interface LocalizedText {
   fr: string;
@@ -28,74 +31,130 @@ export interface Post {
   updatedAt?: string;
 }
 
-export type PostInput = Omit<Post, "id" | "createdAt" | "updatedAt">;
+export type PostInput = Omit<
+  Post,
+  "id" | "createdAt" | "updatedAt"
+>;
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "posts.json");
 
 function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, "[]", "utf-8");
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(DATA_FILE)) {
+    fs.writeFileSync(DATA_FILE, "[]", "utf-8");
+  }
 }
 
 export function getAllPosts(): Post[] {
   ensureFile();
+
   try {
     const raw = fs.readFileSync(DATA_FILE, "utf-8");
+
+    if (!raw.trim()) {
+      return [];
+    }
+
     const parsed = JSON.parse(raw);
+
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (error) {
+    console.error("Erreur lecture posts.json :", error);
     return [];
   }
 }
 
-export function getPostsByCategory(category: PostCategory): Post[] {
+export function getPostsByCategory(
+  category: PostCategory
+): Post[] {
   return getAllPosts()
-    .filter((p) => p.category === category)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    .filter((post) => post.category === category)
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() -
+        new Date(a.createdAt).getTime()
+    );
 }
 
 export function getPostById(id: string): Post | null {
-  return getAllPosts().find((p) => p.id === id) ?? null;
+  return (
+    getAllPosts().find((post) => post.id === id) ?? null
+  );
 }
 
-function persist(posts: Post[]) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(posts, null, 2), "utf-8");
+export function serializePosts(posts: Post[]): string {
+  return JSON.stringify(posts, null, 2) + "\n";
+}
+
+export function persistPosts(posts: Post[]) {
+  ensureFile();
+
+  fs.writeFileSync(
+    DATA_FILE,
+    serializePosts(posts),
+    "utf-8"
+  );
 }
 
 export function addPost(input: PostInput): Post {
-  ensureFile();
   const posts = getAllPosts();
+
   const newPost: Post = {
     ...input,
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
   };
+
   posts.push(newPost);
-  persist(posts);
+
+  persistPosts(posts);
+
   return newPost;
 }
 
-export function updatePost(id: string, input: PostInput): Post | null {
-  ensureFile();
+export function updatePost(
+  id: string,
+  input: PostInput
+): Post | null {
   const posts = getAllPosts();
-  const index = posts.findIndex((p) => p.id === id);
-  if (index === -1) return null;
+
+  const index = posts.findIndex(
+    (post) => post.id === id
+  );
+
+  if (index === -1) {
+    return null;
+  }
+
+  const existing = posts[index];
 
   const updated: Post = {
-    ...posts[index],
+    ...existing,
     ...input,
-    id: posts[index].id,
-    createdAt: posts[index].createdAt,
+    id: existing.id,
+    createdAt: existing.createdAt,
     updatedAt: new Date().toISOString(),
   };
+
   posts[index] = updated;
-  persist(posts);
+
+  persistPosts(posts);
+
   return updated;
 }
 
 export function deletePost(id: string): void {
-  ensureFile();
-  const posts = getAllPosts().filter((p) => p.id !== id);
-  persist(posts);
+  const posts = getAllPosts().filter(
+    (post) => post.id !== id
+  );
+
+  persistPosts(posts);
+}
+
+export function getPostsFilePath(): string {
+  return DATA_FILE;
 }
