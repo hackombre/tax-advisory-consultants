@@ -1,81 +1,69 @@
-import 'server-only';
+const GITHUB_API = "https://api.github.com";
 
-const GITHUB_API = 'https://api.github.com';
+function getGitHubConfig() {
+  const token = process.env.GITHUB_TOKEN;
+  const owner = process.env.GITHUB_OWNER;
+  const repo = process.env.GITHUB_REPO;
+  const branch = process.env.GITHUB_BRANCH || "main";
 
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-
-  if (!value) {
+  if (!token) {
     throw new Error(
-      `[GitHub] Variable d'environnement manquante : ${name}`
+      "GITHUB_TOKEN n'est pas configuré."
     );
   }
 
-  return value;
-}
+  if (!owner) {
+    throw new Error(
+      "GITHUB_OWNER n'est pas configuré."
+    );
+  }
 
-function githubConfig() {
+  if (!repo) {
+    throw new Error(
+      "GITHUB_REPO n'est pas configuré."
+    );
+  }
+
   return {
-    token: requiredEnv('GITHUB_TOKEN'),
-    owner: requiredEnv('GITHUB_OWNER'),
-    repo: requiredEnv('GITHUB_REPO'),
-    branch: process.env.GITHUB_BRANCH || 'main',
-    path:
-      process.env.GITHUB_POSTS_PATH ||
-      'front/data/posts.json',
+    token,
+    owner,
+    repo,
+    branch,
   };
 }
 
-function headers(token: string) {
+function githubHeaders() {
+  const { token } = getGitHubConfig();
+
   return {
-    Accept: 'application/vnd.github+json',
     Authorization: `Bearer ${token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-    'Content-Type': 'application/json',
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "Content-Type": "application/json",
   };
-}
-
-export interface GitHubFile {
-  sha: string;
-  content: string;
-  encoding: string;
-}
-
-async function githubRequest(
-  url: string,
-  init: RequestInit
-): Promise<Response> {
-  const response = await fetch(url, {
-    ...init,
-    cache: 'no-store',
-  });
-
-  return response;
 }
 
 /**
- * Récupère un fichier depuis GitHub.
+ * Récupère les informations d'un fichier dans GitHub.
  */
 export async function getGitHubFile(
-  path?: string
-): Promise<GitHubFile | null> {
-  const config = githubConfig();
-
-  const filePath = path || config.path;
+  repoPath: string
+) {
+  const {
+    owner,
+    repo,
+    branch,
+  } = getGitHubConfig();
 
   const url =
-    `${GITHUB_API}/repos/` +
-    `${encodeURIComponent(config.owner)}/` +
-    `${encodeURIComponent(config.repo)}/contents/` +
-    `${filePath
-      .split('/')
-      .map(encodeURIComponent)
-      .join('/')}` +
-    `?ref=${encodeURIComponent(config.branch)}`;
+    `${GITHUB_API}/repos/${encodeURIComponent(owner)}` +
+    `/${encodeURIComponent(repo)}/contents/` +
+    `${repoPath}?ref=${encodeURIComponent(branch)}`;
 
-  const response = await githubRequest(url, {
-    method: 'GET',
-    headers: headers(config.token),
+  const response = await fetch(url, {
+    method: "GET",
+    headers: githubHeaders(),
+    cache: "no-store",
   });
 
   if (response.status === 404) {
@@ -86,76 +74,7 @@ export async function getGitHubFile(
     const text = await response.text();
 
     throw new Error(
-      `[GitHub] Impossible de lire ${filePath}. ` +
-      `${response.status} ${text}`
-    );
-  }
-
-  const data = await response.json();
-
-  if (!data.content) {
-    throw new Error(
-      `[GitHub] Le fichier ${filePath} ne contient pas de contenu.`
-    );
-  }
-
-  const content = Buffer.from(
-    data.content.replace(/\n/g, ''),
-    'base64'
-  ).toString('utf-8');
-
-  return {
-    sha: data.sha,
-    content,
-    encoding: data.encoding || 'base64',
-  };
-}
-
-/**
- * Écrit un fichier sur GitHub et crée automatiquement
- * un commit sur la branche configurée.
- */
-export async function writeGitHubFile(
-  content: string,
-  message: string,
-  path?: string
-) {
-  const config = githubConfig();
-
-  const filePath = path || config.path;
-
-  const existing = await getGitHubFile(filePath);
-
-  const body: Record<string, unknown> = {
-    message,
-    content: Buffer.from(content, 'utf-8').toString('base64'),
-    branch: config.branch,
-  };
-
-  if (existing?.sha) {
-    body.sha = existing.sha;
-  }
-
-  const url =
-    `${GITHUB_API}/repos/` +
-    `${encodeURIComponent(config.owner)}/` +
-    `${encodeURIComponent(config.repo)}/contents/` +
-    filePath
-      .split('/')
-      .map(encodeURIComponent)
-      .join('/');
-
-  const response = await githubRequest(url, {
-    method: 'PUT',
-    headers: headers(config.token),
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-
-    throw new Error(
-      `[GitHub] Échec de l'écriture de ${filePath}. ` +
+      `GitHub GET ${repoPath} : ` +
       `${response.status} ${text}`
     );
   }
@@ -164,50 +83,135 @@ export async function writeGitHubFile(
 }
 
 /**
- * Lit le JSON d'un fichier GitHub.
+ * Écrit un fichier texte dans GitHub.
+ *
+ * Si le fichier existe déjà, son SHA est récupéré
+ * automatiquement afin de pouvoir le remplacer.
  */
-export async function readGitHubJson<T>(
-  path?: string,
-  fallback?: T
-): Promise<T> {
-  const file = await getGitHubFile(path);
+export async function writeGitHubFile(
+  repoPath: string,
+  content: string,
+  message: string
+) {
+  const {
+    owner,
+    repo,
+    branch,
+  } = getGitHubConfig();
 
-  if (!file) {
-    if (fallback !== undefined) {
-      return fallback;
-    }
+  const existing = await getGitHubFile(repoPath);
+
+  const body: Record<string, unknown> = {
+    message,
+    content: Buffer.from(
+      content,
+      "utf-8"
+    ).toString("base64"),
+    branch,
+  };
+
+  if (existing?.sha) {
+    body.sha = existing.sha;
+  }
+
+  const url =
+    `${GITHUB_API}/repos/${encodeURIComponent(owner)}` +
+    `/${encodeURIComponent(repo)}/contents/` +
+    repoPath;
+
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: githubHeaders(),
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
 
     throw new Error(
-      `[GitHub] Fichier introuvable : ${
-        path || githubConfig().path
-      }`
+      `GitHub PUT ${repoPath} : ` +
+      `${response.status} ${text}`
     );
   }
 
-  try {
-    return JSON.parse(file.content) as T;
-  } catch (error) {
-    throw new Error(
-      `[GitHub] JSON invalide dans ${
-        path || githubConfig().path
-      }.`
-    );
-  }
+  return response.json();
 }
 
 /**
- * Écrit un objet JSON et le commit sur GitHub.
+ * Écrit un fichier binaire dans GitHub.
+ *
+ * Utilisé notamment pour les documents/images uploadés
+ * depuis la page secrète.
  */
-export async function writeGitHubJson<T>(
-  data: T,
-  message: string,
-  path?: string
+export async function syncUploadToGitHub(
+  repoPath: string,
+  buffer: Buffer,
+  message?: string
 ) {
-  const json = JSON.stringify(data, null, 2) + '\n';
+  const {
+    owner,
+    repo,
+    branch,
+  } = getGitHubConfig();
+
+  const existing = await getGitHubFile(repoPath);
+
+  const body: Record<string, unknown> = {
+    message:
+      message ||
+      `Ajout du fichier ${repoPath}`,
+    content: buffer.toString("base64"),
+    branch,
+  };
+
+  if (existing?.sha) {
+    body.sha = existing.sha;
+  }
+
+  const url =
+    `${GITHUB_API}/repos/${encodeURIComponent(owner)}` +
+    `/${encodeURIComponent(repo)}/contents/` +
+    repoPath;
+
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: githubHeaders(),
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+
+    throw new Error(
+      `GitHub upload ${repoPath} : ` +
+      `${response.status} ${text}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Synchronise posts.json vers GitHub.
+ */
+export async function syncPostsToGitHub(
+  posts: unknown
+) {
+  const githubPath =
+    process.env.GITHUB_POSTS_PATH ||
+    "front/data/posts.json";
+
+  const content = JSON.stringify(
+    posts,
+    null,
+    2
+  );
 
   return writeGitHubFile(
-    json,
-    message,
-    path
+    githubPath,
+    content,
+    "Mise à jour des publications depuis l'administration"
   );
 }
