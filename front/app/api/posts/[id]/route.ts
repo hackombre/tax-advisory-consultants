@@ -1,129 +1,77 @@
-import {
-  NextRequest,
-  NextResponse,
-} from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 
 import {
   deletePost,
+  getAllPosts,
   getPostById,
   updatePost,
-} from '@/lib/posts';
+  LocalizedText,
+  PostCategory,
+  PostDocument,
+} from "@/lib/posts";
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+import { isAuthenticated } from "@/lib/auth";
+import { normalizeSpaces } from "@/lib/text";
+import { syncPostsToGitHub } from "@/lib/github-storage";
 
-interface RouteContext {
-  params: Promise<{
-    id: string;
-  }>;
-}
+const CATEGORIES: PostCategory[] = [
+  "actualite",
+  "publication",
+  "documentation",
+];
 
-export async function GET(
-  _request: NextRequest,
-  context: RouteContext
+export async function DELETE(
+  _req: NextRequest,
+  context: {
+    params: Promise<{ id: string }>;
+  }
 ) {
-  try {
-    const { id } =
-      await context.params;
-
-    const post =
-      await getPostById(id);
-
-    if (!post) {
-      return NextResponse.json(
-        {
-          error:
-            'Contenu introuvable.',
-        },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json(
-      post,
-      {
-        headers: {
-          'Cache-Control':
-            'no-store, no-cache, must-revalidate',
-        },
-      }
-    );
-  } catch (error) {
-    console.error(
-      '[API posts/:id GET]',
-      error
-    );
-
+  if (!(await isAuthenticated())) {
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Erreur de lecture.',
+        error: "Non autorisé.",
       },
-      { status: 500 }
+      { status: 401 }
     );
   }
-}
 
-export async function PUT(
-  request: NextRequest,
-  context: RouteContext
-) {
-  try {
-    const { id } =
-      await context.params;
+  const { id } =
+    await context.params;
 
-    const body =
-      await request.json();
+  const existing =
+    getPostById(id);
 
-    if (
-      !body ||
-      typeof body !== 'object'
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'Données invalides.',
-        },
-        { status: 400 }
-      );
-    }
-
-    const existing =
-      await getPostById(id);
-
-    if (!existing) {
-      return NextResponse.json(
-        {
-          error:
-            'Contenu introuvable.',
-        },
-        { status: 404 }
-      );
-    }
-
-    const updated =
-      await updatePost(
-        id,
-        body
-      );
-
+  if (!existing) {
     return NextResponse.json(
-      updated
+      {
+        error:
+          "Publication introuvable.",
+      },
+      { status: 404 }
     );
+  }
+
+  try {
+    deletePost(id);
+
+    await syncPostsToGitHub(
+      getAllPosts()
+    );
+
+    return NextResponse.json({
+      success: true,
+      persisted: true,
+    });
   } catch (error) {
     console.error(
-      '[API posts/:id PUT]',
+      "Erreur suppression/synchronisation:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : 'Impossible de modifier le contenu.',
+          "La suppression locale a été effectuée, mais la synchronisation GitHub a échoué.",
       },
       { status: 500 }
     );
@@ -131,54 +79,195 @@ export async function PUT(
 }
 
 export async function PATCH(
-  request: NextRequest,
-  context: RouteContext
+  req: NextRequest,
+  context: {
+    params: Promise<{ id: string }>;
+  }
 ) {
-  return PUT(
-    request,
-    context
-  );
-}
+  if (!(await isAuthenticated())) {
+    return NextResponse.json(
+      {
+        error: "Non autorisé.",
+      },
+      { status: 401 }
+    );
+  }
 
-export async function DELETE(
-  _request: NextRequest,
-  context: RouteContext
-) {
+  const { id } =
+    await context.params;
+
+  const existing =
+    getPostById(id);
+
+  if (!existing) {
+    return NextResponse.json(
+      {
+        error:
+          "Publication introuvable.",
+      },
+      { status: 404 }
+    );
+  }
+
+  let payload: {
+    category?: PostCategory;
+    title?: LocalizedText;
+    excerpt?: LocalizedText;
+    body?: LocalizedText;
+    coverImageUrl?: string;
+    videoUrl?: string;
+    documents?: PostDocument[];
+  };
+
   try {
-    const { id } =
-      await context.params;
+    payload = await req.json();
+  } catch {
+    return NextResponse.json(
+      {
+        error: "Requête invalide.",
+      },
+      { status: 400 }
+    );
+  }
 
-    const existing =
-      await getPostById(id);
+  const {
+    category,
+    title,
+    excerpt,
+    body,
+    coverImageUrl,
+    videoUrl,
+    documents,
+  } = payload;
 
-    if (!existing) {
+  if (
+    category &&
+    !CATEGORIES.includes(category)
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Catégorie invalide.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (
+    title !== undefined &&
+    !title.fr?.trim()
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Le titre (au moins en français) est requis.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (
+    excerpt !== undefined &&
+    !excerpt.fr?.trim()
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Le texte de présentation (au moins en français) est requis.",
+      },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const updated =
+      updatePost(id, {
+        category:
+          category ??
+          existing.category,
+
+        title: title
+          ? {
+              fr:
+                normalizeSpaces(
+                  title.fr.trim()
+                ) || "",
+              en:
+                normalizeSpaces(
+                  title.en?.trim()
+                ) || undefined,
+            }
+          : existing.title,
+
+        excerpt: excerpt
+          ? {
+              fr:
+                normalizeSpaces(
+                  excerpt.fr.trim()
+                ) || "",
+              en:
+                normalizeSpaces(
+                  excerpt.en?.trim()
+                ) || undefined,
+            }
+          : existing.excerpt,
+
+        body:
+          body !== undefined
+            ? {
+                fr:
+                  body.fr?.trim() ??
+                  "",
+                en:
+                  body.en?.trim() ||
+                  undefined,
+              }
+            : existing.body,
+
+        coverImageUrl:
+          coverImageUrl !== undefined
+            ? coverImageUrl
+            : existing.coverImageUrl,
+
+        videoUrl:
+          videoUrl !== undefined
+            ? videoUrl
+            : existing.videoUrl,
+
+        documents:
+          documents !== undefined
+            ? documents
+            : existing.documents,
+      });
+
+    if (!updated) {
       return NextResponse.json(
         {
           error:
-            'Contenu introuvable.',
+            "Impossible de mettre à jour la publication.",
         },
-        { status: 404 }
+        { status: 500 }
       );
     }
 
-    await deletePost(id);
+    await syncPostsToGitHub(
+      getAllPosts()
+    );
 
     return NextResponse.json({
-      success: true,
-      id,
+      post: updated,
+      persisted: true,
     });
   } catch (error) {
     console.error(
-      '[API posts/:id DELETE]',
+      "Erreur mise à jour/synchronisation:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : 'Impossible de supprimer le contenu.',
+          "La modification locale a été effectuée, mais la synchronisation GitHub a échoué.",
       },
       { status: 500 }
     );
