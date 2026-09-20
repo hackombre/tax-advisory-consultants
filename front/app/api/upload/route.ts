@@ -1,18 +1,11 @@
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
-
+import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
 import { isAuthenticated } from "@/lib/auth";
-import { syncUploadToGitHub } from "@/lib/github-storage";
-
-export const dynamic = "force-dynamic";
-
-const MAX_FILE_SIZE =
-  20 * 1024 * 1024; // 20 MB
+import {
+  syncUploadToGitHub,
+} from "@/lib/github-storage";
 
 export async function POST(
   req: NextRequest
@@ -22,17 +15,18 @@ export async function POST(
       {
         error: "Non autorisé.",
       },
-      {
-        status: 401,
-      }
+      { status: 401 }
     );
   }
 
   try {
-    const formData = await req.formData();
+    const formData =
+      await req.formData();
 
     const file =
-      formData.get("file") as File | null;
+      formData.get("file") as
+        | File
+        | null;
 
     if (!file) {
       return NextResponse.json(
@@ -40,29 +34,20 @@ export async function POST(
           error:
             "Aucun fichier fourni.",
         },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        {
-          error:
-            "Le fichier ne doit pas dépasser 20 MB.",
-        },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
     const bytes =
       await file.arrayBuffer();
 
-    const buffer = Buffer.from(bytes);
+    const buffer =
+      Buffer.from(bytes);
 
+    /*
+     * On limite l'extension afin d'éviter
+     * des noms de fichiers dangereux.
+     */
     const originalExt =
       path.extname(file.name);
 
@@ -80,15 +65,20 @@ export async function POST(
 
     /*
      * Sauvegarde locale immédiate.
+     * Cela permet au fichier d'être disponible
+     * sans attendre un éventuel redéploiement.
      */
-    const uploadsDir = path.join(
-      process.cwd(),
-      "public",
-      "uploads"
-    );
+    const uploadsDir =
+      path.join(
+        process.cwd(),
+        "public",
+        "uploads"
+      );
 
     if (
-      !fs.existsSync(uploadsDir)
+      !fs.existsSync(
+        uploadsDir
+      )
     ) {
       fs.mkdirSync(
         uploadsDir,
@@ -98,27 +88,77 @@ export async function POST(
       );
     }
 
-    fs.writeFileSync(
+    const localPath =
       path.join(
         uploadsDir,
         filename
-      ),
+      );
+
+    fs.writeFileSync(
+      localPath,
       buffer
     );
 
     /*
-     * Sauvegarde permanente dans GitHub.
+     * Chemin dans le dépôt GitHub.
+     *
+     * IMPORTANT :
+     * ce chemin est relatif à la racine
+     * du dépôt GitHub.
      */
-    await syncUploadToGitHub(
-      filename,
-      buffer,
-      `content: upload ${filename}`
-    );
+    const githubPath =
+      `front/public/uploads/${filename}`;
+
+    try {
+      await syncUploadToGitHub(
+        githubPath,
+        buffer,
+        `Ajout du document ${filename}`
+      );
+    } catch (githubError) {
+      console.error(
+        "Erreur upload GitHub:",
+        githubError
+      );
+
+      /*
+       * On supprime le fichier local si GitHub
+       * n'a pas pu le sauvegarder.
+       *
+       * Ainsi on ne donne pas l'impression
+       * que le fichier est durable alors qu'il
+       * risque de disparaître au redémarrage.
+       */
+      try {
+        if (
+          fs.existsSync(localPath)
+        ) {
+          fs.unlinkSync(
+            localPath
+          );
+        }
+      } catch {
+        // Rien à faire si le nettoyage échoue.
+      }
+
+      return NextResponse.json(
+        {
+          error:
+            "Le fichier n'a pas pu être sauvegardé durablement sur GitHub.",
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
-      url: `/uploads/${filename}`,
-      originalName: file.name,
-      savedToGitHub: true,
+      url:
+        `/uploads/${filename}`,
+
+      originalName:
+        file.name,
+
+      persisted:
+        true,
     });
   } catch (error) {
     console.error(
@@ -129,15 +169,9 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "Le fichier n'a pas pu être sauvegardé.",
-        details:
-          error instanceof Error
-            ? error.message
-            : "Erreur inconnue",
+          "Impossible de téléverser le fichier.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
