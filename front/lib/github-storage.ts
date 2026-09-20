@@ -1,172 +1,213 @@
-import fs from "fs";
-import path from "path";
+import 'server-only';
 
-const GITHUB_API = "https://api.github.com";
+const GITHUB_API = 'https://api.github.com';
 
-function getRequiredEnv(name: string): string {
+function requiredEnv(name: string): string {
   const value = process.env[name];
 
   if (!value) {
     throw new Error(
-      `Variable d'environnement manquante : ${name}`
+      `[GitHub] Variable d'environnement manquante : ${name}`
     );
   }
 
   return value;
 }
 
-function getGitHubConfig() {
+function githubConfig() {
   return {
-    token: getRequiredEnv("GITHUB_TOKEN"),
-    owner: getRequiredEnv("GITHUB_OWNER"),
-    repo: getRequiredEnv("GITHUB_REPO"),
-    branch: process.env.GITHUB_BRANCH || "main",
+    token: requiredEnv('GITHUB_TOKEN'),
+    owner: requiredEnv('GITHUB_OWNER'),
+    repo: requiredEnv('GITHUB_REPO'),
+    branch: process.env.GITHUB_BRANCH || 'main',
+    path:
+      process.env.GITHUB_POSTS_PATH ||
+      'front/data/posts.json',
   };
+}
+
+function headers(token: string) {
+  return {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${token}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+    'Content-Type': 'application/json',
+  };
+}
+
+export interface GitHubFile {
+  sha: string;
+  content: string;
+  encoding: string;
 }
 
 async function githubRequest(
   url: string,
-  options: RequestInit = {}
-) {
-  const { token } = getGitHubConfig();
-
+  init: RequestInit
+): Promise<Response> {
   const response = await fetch(url, {
-    ...options,
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "X-GitHub-Api-Version": "2022-11-28",
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    cache: "no-store",
+    ...init,
+    cache: 'no-store',
   });
 
-  const text = await response.text();
+  return response;
+}
 
-  let data: unknown = null;
+/**
+ * Récupère un fichier depuis GitHub.
+ */
+export async function getGitHubFile(
+  path?: string
+): Promise<GitHubFile | null> {
+  const config = githubConfig();
 
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
+  const filePath = path || config.path;
+
+  const url =
+    `${GITHUB_API}/repos/` +
+    `${encodeURIComponent(config.owner)}/` +
+    `${encodeURIComponent(config.repo)}/contents/` +
+    `${filePath
+      .split('/')
+      .map(encodeURIComponent)
+      .join('/')}` +
+    `?ref=${encodeURIComponent(config.branch)}`;
+
+  const response = await githubRequest(url, {
+    method: 'GET',
+    headers: headers(config.token),
+  });
+
+  if (response.status === 404) {
+    return null;
   }
 
   if (!response.ok) {
-    console.error(
-      "Erreur GitHub API:",
-      response.status,
-      data
-    );
+    const text = await response.text();
 
     throw new Error(
-      `GitHub API ${response.status}: ${
-        typeof data === "string"
-          ? data
-          : JSON.stringify(data)
+      `[GitHub] Impossible de lire ${filePath}. ` +
+      `${response.status} ${text}`
+    );
+  }
+
+  const data = await response.json();
+
+  if (!data.content) {
+    throw new Error(
+      `[GitHub] Le fichier ${filePath} ne contient pas de contenu.`
+    );
+  }
+
+  const content = Buffer.from(
+    data.content.replace(/\n/g, ''),
+    'base64'
+  ).toString('utf-8');
+
+  return {
+    sha: data.sha,
+    content,
+    encoding: data.encoding || 'base64',
+  };
+}
+
+/**
+ * Écrit un fichier sur GitHub et crée automatiquement
+ * un commit sur la branche configurée.
+ */
+export async function writeGitHubFile(
+  content: string,
+  message: string,
+  path?: string
+) {
+  const config = githubConfig();
+
+  const filePath = path || config.path;
+
+  const existing = await getGitHubFile(filePath);
+
+  const body: Record<string, unknown> = {
+    message,
+    content: Buffer.from(content, 'utf-8').toString('base64'),
+    branch: config.branch,
+  };
+
+  if (existing?.sha) {
+    body.sha = existing.sha;
+  }
+
+  const url =
+    `${GITHUB_API}/repos/` +
+    `${encodeURIComponent(config.owner)}/` +
+    `${encodeURIComponent(config.repo)}/contents/` +
+    filePath
+      .split('/')
+      .map(encodeURIComponent)
+      .join('/');
+
+  const response = await githubRequest(url, {
+    method: 'PUT',
+    headers: headers(config.token),
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+
+    throw new Error(
+      `[GitHub] Échec de l'écriture de ${filePath}. ` +
+      `${response.status} ${text}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Lit le JSON d'un fichier GitHub.
+ */
+export async function readGitHubJson<T>(
+  path?: string,
+  fallback?: T
+): Promise<T> {
+  const file = await getGitHubFile(path);
+
+  if (!file) {
+    if (fallback !== undefined) {
+      return fallback;
+    }
+
+    throw new Error(
+      `[GitHub] Fichier introuvable : ${
+        path || githubConfig().path
       }`
     );
   }
 
-  return data;
-}
-
-async function getFileFromGitHub(
-  filePath: string
-) {
-  const {
-    owner,
-    repo,
-    branch,
-  } = getGitHubConfig();
-
-  const url =
-    `${GITHUB_API}/repos/${owner}/${repo}/contents/` +
-    `${filePath}?ref=${encodeURIComponent(branch)}`;
-
   try {
-    return await githubRequest(url);
+    return JSON.parse(file.content) as T;
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("GitHub API 404")
-    ) {
-      return null;
-    }
-
-    throw error;
+    throw new Error(
+      `[GitHub] JSON invalide dans ${
+        path || githubConfig().path
+      }.`
+    );
   }
 }
 
-export async function commitFileToGitHub(
-  filePath: string,
-  content: string | Buffer,
-  message: string
+/**
+ * Écrit un objet JSON et le commit sur GitHub.
+ */
+export async function writeGitHubJson<T>(
+  data: T,
+  message: string,
+  path?: string
 ) {
-  const {
-    owner,
-    repo,
-    branch,
-  } = getGitHubConfig();
+  const json = JSON.stringify(data, null, 2) + '\n';
 
-  const existing = await getFileFromGitHub(filePath);
-
-  const buffer = Buffer.isBuffer(content)
-    ? content
-    : Buffer.from(content, "utf-8");
-
-  const body: Record<string, unknown> = {
+  return writeGitHubFile(
+    json,
     message,
-    content: buffer.toString("base64"),
-    branch,
-  };
-
-  if (
-    existing &&
-    typeof existing === "object" &&
-    "sha" in existing
-  ) {
-    body.sha = (
-      existing as { sha: string }
-    ).sha;
-  }
-
-  const url =
-    `${GITHUB_API}/repos/${owner}/${repo}/contents/` +
-    filePath;
-
-  return githubRequest(url, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
-}
-
-export async function syncPostsToGitHub(
-  postsJson: string,
-  message: string
-) {
-  const filePath =
-    process.env.GITHUB_POSTS_PATH ||
-    "front/data/posts.json";
-
-  return commitFileToGitHub(
-    filePath,
-    postsJson,
-    message
-  );
-}
-
-export async function syncUploadToGitHub(
-  filename: string,
-  buffer: Buffer,
-  message: string
-) {
-  const filePath =
-    `front/public/uploads/${filename}`;
-
-  return commitFileToGitHub(
-    filePath,
-    buffer,
-    message
+    path
   );
 }
