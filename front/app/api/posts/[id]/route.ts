@@ -1,303 +1,186 @@
 import {
   NextRequest,
   NextResponse,
-} from "next/server";
+} from 'next/server';
 
 import {
   deletePost,
-  getAllPosts,
   getPostById,
   updatePost,
-  LocalizedText,
-  PostCategory,
-  PostDocument,
-  serializePosts,
-} from "@/lib/posts";
+} from '@/lib/posts';
 
-import { isAuthenticated } from "@/lib/auth";
-import { normalizeSpaces } from "@/lib/text";
-import { syncPostsToGitHub } from "@/lib/github-storage";
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
-export const dynamic = "force-dynamic";
+interface RouteContext {
+  params: Promise<{
+    id: string;
+  }>;
+}
 
-const CATEGORIES: PostCategory[] = [
-  "actualite",
-  "publication",
-  "documentation",
-];
-
-export async function DELETE(
-  _req: NextRequest,
-  context: {
-    params: Promise<{ id: string }>;
-  }
+export async function GET(
+  _request: NextRequest,
+  context: RouteContext
 ) {
-  if (!(await isAuthenticated())) {
-    return NextResponse.json(
-      {
-        error: "Non autorisé.",
-      },
-      {
-        status: 401,
-      }
-    );
-  }
-
-  const { id } = await context.params;
-
-  const existing = getPostById(id);
-
-  if (!existing) {
-    return NextResponse.json(
-      {
-        error: "Publication introuvable.",
-      },
-      {
-        status: 404,
-      }
-    );
-  }
-
   try {
-    deletePost(id);
+    const { id } =
+      await context.params;
 
-    await syncPostsToGitHub(
-      serializePosts(getAllPosts()),
-      `content: suppression ${existing.category} ${id}`
+    const post =
+      await getPostById(id);
+
+    if (!post) {
+      return NextResponse.json(
+        {
+          error:
+            'Contenu introuvable.',
+        },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(
+      post,
+      {
+        headers: {
+          'Cache-Control':
+            'no-store, no-cache, must-revalidate',
+        },
+      }
     );
-
-    return NextResponse.json({
-      success: true,
-      savedToGitHub: true,
-    });
   } catch (error) {
     console.error(
-      "Erreur suppression publication:",
+      '[API posts/:id GET]',
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "La suppression locale a été effectuée mais la synchronisation GitHub a échoué.",
-        details:
           error instanceof Error
             ? error.message
-            : "Erreur inconnue",
+            : 'Erreur de lecture.',
       },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  context: RouteContext
+) {
+  try {
+    const { id } =
+      await context.params;
+
+    const body =
+      await request.json();
+
+    if (
+      !body ||
+      typeof body !== 'object'
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'Données invalides.',
+        },
+        { status: 400 }
+      );
+    }
+
+    const existing =
+      await getPostById(id);
+
+    if (!existing) {
+      return NextResponse.json(
+        {
+          error:
+            'Contenu introuvable.',
+        },
+        { status: 404 }
+      );
+    }
+
+    const updated =
+      await updatePost(
+        id,
+        body
+      );
+
+    return NextResponse.json(
+      updated
+    );
+  } catch (error) {
+    console.error(
+      '[API posts/:id PUT]',
+      error
+    );
+
+    return NextResponse.json(
       {
-        status: 500,
-      }
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Impossible de modifier le contenu.',
+      },
+      { status: 500 }
     );
   }
 }
 
 export async function PATCH(
-  req: NextRequest,
-  context: {
-    params: Promise<{ id: string }>;
-  }
+  request: NextRequest,
+  context: RouteContext
 ) {
-  if (!(await isAuthenticated())) {
-    return NextResponse.json(
-      {
-        error: "Non autorisé.",
-      },
-      {
-        status: 401,
-      }
-    );
-  }
+  return PUT(
+    request,
+    context
+  );
+}
 
-  const { id } = await context.params;
-
-  const existing = getPostById(id);
-
-  if (!existing) {
-    return NextResponse.json(
-      {
-        error: "Publication introuvable.",
-      },
-      {
-        status: 404,
-      }
-    );
-  }
-
-  let payload: {
-    category?: PostCategory;
-    title?: LocalizedText;
-    excerpt?: LocalizedText;
-    body?: LocalizedText;
-    coverImageUrl?: string;
-    videoUrl?: string;
-    documents?: PostDocument[];
-  };
-
+export async function DELETE(
+  _request: NextRequest,
+  context: RouteContext
+) {
   try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json(
-      {
-        error: "Requête invalide.",
-      },
-      {
-        status: 400,
-      }
-    );
-  }
+    const { id } =
+      await context.params;
 
-  const {
-    category,
-    title,
-    excerpt,
-    body,
-    coverImageUrl,
-    videoUrl,
-    documents,
-  } = payload;
+    const existing =
+      await getPostById(id);
 
-  if (
-    category &&
-    !CATEGORIES.includes(category)
-  ) {
-    return NextResponse.json(
-      {
-        error: "Catégorie invalide.",
-      },
-      {
-        status: 400,
-      }
-    );
-  }
-
-  if (
-    title !== undefined &&
-    !title.fr?.trim()
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          "Le titre (au moins en français) est requis.",
-      },
-      {
-        status: 400,
-      }
-    );
-  }
-
-  if (
-    excerpt !== undefined &&
-    !excerpt.fr?.trim()
-  ) {
-    return NextResponse.json(
-      {
-        error:
-          "Le texte de présentation (au moins en français) est requis.",
-      },
-      {
-        status: 400,
-      }
-    );
-  }
-
-  try {
-    const updated = updatePost(id, {
-      category:
-        category ?? existing.category,
-
-      title: title
-        ? {
-            fr:
-              normalizeSpaces(
-                title.fr.trim()
-              ) || "",
-            en:
-              normalizeSpaces(
-                title.en?.trim()
-              ) || undefined,
-          }
-        : existing.title,
-
-      excerpt: excerpt
-        ? {
-            fr:
-              normalizeSpaces(
-                excerpt.fr.trim()
-              ) || "",
-            en:
-              normalizeSpaces(
-                excerpt.en?.trim()
-              ) || undefined,
-          }
-        : existing.excerpt,
-
-      body:
-        body !== undefined
-          ? {
-              fr:
-                body.fr?.trim() ?? "",
-              en:
-                body.en?.trim() ||
-                undefined,
-            }
-          : existing.body,
-
-      coverImageUrl:
-        coverImageUrl !== undefined
-          ? coverImageUrl
-          : existing.coverImageUrl,
-
-      videoUrl:
-        videoUrl !== undefined
-          ? videoUrl
-          : existing.videoUrl,
-
-      documents:
-        documents !== undefined
-          ? documents
-          : existing.documents,
-    });
-
-    if (!updated) {
+    if (!existing) {
       return NextResponse.json(
         {
           error:
-            "Impossible de modifier la publication.",
+            'Contenu introuvable.',
         },
-        {
-          status: 500,
-        }
+        { status: 404 }
       );
     }
 
-    await syncPostsToGitHub(
-      serializePosts(getAllPosts()),
-      `content: modification ${updated.category} ${id}`
-    );
+    await deletePost(id);
 
     return NextResponse.json({
-      post: updated,
-      savedToGitHub: true,
+      success: true,
+      id,
     });
   } catch (error) {
     console.error(
-      "Erreur modification publication:",
+      '[API posts/:id DELETE]',
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "La modification locale a été effectuée mais la synchronisation GitHub a échoué.",
-        details:
           error instanceof Error
             ? error.message
-            : "Erreur inconnue",
+            : 'Impossible de supprimer le contenu.',
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }
