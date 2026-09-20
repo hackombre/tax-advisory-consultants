@@ -1,207 +1,173 @@
-import 'server-only';
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 
-import {
-  readGitHubJson,
-  writeGitHubJson,
-} from './github-storage';
+export type PostCategory =
+  | "actualite"
+  | "publication"
+  | "documentation";
 
-export type PostType =
-  | 'publication'
-  | 'actualite'
-  | 'document';
+export interface LocalizedText {
+  fr: string;
+  en?: string;
+}
+
+export interface PostDocument {
+  id: string;
+  name: string;
+  url: string;
+}
 
 export interface Post {
   id: string;
-  type: PostType;
-
-  title: string;
-  slug?: string;
-
-  excerpt?: string;
-  content?: string;
-
-  image?: string;
-  coverImage?: string;
-
-  category?: string;
-
-  author?: string;
-
-  publishedAt?: string;
+  category: PostCategory;
+  title: LocalizedText;
+  excerpt: LocalizedText;
+  body: LocalizedText;
+  coverImageUrl?: string;
+  videoUrl?: string;
+  documents?: PostDocument[];
   createdAt: string;
-  updatedAt: string;
-
-  featured?: boolean;
-
-  documentUrl?: string;
-  fileUrl?: string;
-
-  tags?: string[];
-
-  [key: string]: unknown;
+  updatedAt?: string;
 }
 
-const POSTS_PATH =
-  process.env.GITHUB_POSTS_PATH ||
-  'front/data/posts.json';
+export type PostInput = Omit<
+  Post,
+  "id" | "createdAt" | "updatedAt"
+>;
 
-function normalizePosts(value: unknown): Post[] {
-  if (Array.isArray(value)) {
-    return value as Post[];
+const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_FILE = path.join(DATA_DIR, "posts.json");
+
+function ensureFile(): void {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 
-  if (
-    value &&
-    typeof value === 'object' &&
-    Array.isArray(
-      (value as { posts?: unknown }).posts
-    )
-  ) {
-    return (
-      (value as { posts: Post[] }).posts
-    );
+  if (!fs.existsSync(DATA_FILE)) {
+    fs.writeFileSync(DATA_FILE, "[]", "utf-8");
   }
-
-  return [];
 }
 
-export async function getPosts(): Promise<Post[]> {
-  const data = await readGitHubJson<unknown>(
-    POSTS_PATH,
-    []
-  );
+export function getAllPosts(): Post[] {
+  ensureFile();
 
-  return normalizePosts(data);
+  try {
+    const raw = fs.readFileSync(DATA_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed as Post[];
+  } catch (error) {
+    console.error("Erreur lecture posts.json:", error);
+    return [];
+  }
 }
 
-export async function getPostById(
-  id: string
-): Promise<Post | null> {
-  const posts = await getPosts();
-
-  return (
-    posts.find(
-      (post) => String(post.id) === String(id)
-    ) || null
-  );
-}
-
-export async function getPostsByType(
-  type: PostType
-): Promise<Post[]> {
-  const posts = await getPosts();
-
-  return posts
-    .filter((post) => post.type === type)
+/**
+ * Conserve cette fonction car elle est utilisée
+ * par les pages Actualités, Publications et Documentation.
+ */
+export function getPostsByCategory(
+  category: PostCategory
+): Post[] {
+  return getAllPosts()
+    .filter((post) => post.category === category)
     .sort((a, b) => {
       const dateA = new Date(
-        a.publishedAt ||
-          a.createdAt ||
-          0
+        a.updatedAt || a.createdAt
       ).getTime();
 
       const dateB = new Date(
-        b.publishedAt ||
-          b.createdAt ||
-          0
+        b.updatedAt || b.createdAt
       ).getTime();
 
       return dateB - dateA;
     });
 }
 
-export async function createPost(
-  input: Omit<
-    Post,
-    'id' | 'createdAt' | 'updatedAt'
-  >
-): Promise<Post> {
-  const posts = await getPosts();
-
-  const now = new Date().toISOString();
-
-  const post: Post = {
-    ...input,
-
-    id: crypto.randomUUID(),
-
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  posts.unshift(post);
-
-  await writeGitHubJson(
-    posts,
-    `content: add ${post.type} ${post.id}`
+export function getPostById(
+  id: string
+): Post | null {
+  return (
+    getAllPosts().find(
+      (post) => post.id === id
+    ) ?? null
   );
-
-  return post;
 }
 
-export async function updatePost(
+function persist(posts: Post[]): void {
+  ensureFile();
+
+  fs.writeFileSync(
+    DATA_FILE,
+    JSON.stringify(posts, null, 2),
+    "utf-8"
+  );
+}
+
+export function addPost(
+  input: PostInput
+): Post {
+  ensureFile();
+
+  const posts = getAllPosts();
+
+  const newPost: Post = {
+    ...input,
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+  };
+
+  posts.push(newPost);
+
+  persist(posts);
+
+  return newPost;
+}
+
+export function updatePost(
   id: string,
-  changes: Partial<Post>
-): Promise<Post> {
-  const posts = await getPosts();
+  input: PostInput
+): Post | null {
+  ensureFile();
+
+  const posts = getAllPosts();
 
   const index = posts.findIndex(
-    (post) =>
-      String(post.id) === String(id)
+    (post) => post.id === id
   );
 
   if (index === -1) {
-    throw new Error(
-      `Publication introuvable : ${id}`
-    );
+    return null;
   }
 
-  const current = posts[index];
-
   const updated: Post = {
-    ...current,
-    ...changes,
-
-    id: current.id,
-
-    createdAt: current.createdAt,
-
+    ...posts[index],
+    ...input,
+    id: posts[index].id,
+    createdAt: posts[index].createdAt,
     updatedAt: new Date().toISOString(),
   };
 
   posts[index] = updated;
 
-  await writeGitHubJson(
-    posts,
-    `content: update ${updated.type} ${updated.id}`
-  );
+  persist(posts);
 
   return updated;
 }
 
-export async function deletePost(
+export function deletePost(
   id: string
-): Promise<void> {
-  const posts = await getPosts();
+): void {
+  ensureFile();
 
-  const existing = posts.find(
-    (post) =>
-      String(post.id) === String(id)
+  const posts = getAllPosts().filter(
+    (post) => post.id !== id
   );
 
-  if (!existing) {
-    throw new Error(
-      `Publication introuvable : ${id}`
-    );
-  }
-
-  const remaining = posts.filter(
-    (post) =>
-      String(post.id) !== String(id)
-  );
-
-  await writeGitHubJson(
-    remaining,
-    `content: delete ${existing.type} ${existing.id}`
-  );
+  persist(posts);
 }
