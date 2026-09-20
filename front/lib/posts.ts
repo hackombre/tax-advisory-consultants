@@ -1,160 +1,207 @@
-import fs from "fs";
-import path from "path";
-import crypto from "crypto";
+import 'server-only';
 
-export type PostCategory =
-  | "actualite"
-  | "publication"
-  | "documentation";
+import {
+  readGitHubJson,
+  writeGitHubJson,
+} from './github-storage';
 
-export interface LocalizedText {
-  fr: string;
-  en?: string;
-}
-
-export interface PostDocument {
-  id: string;
-  name: string;
-  url: string;
-}
+export type PostType =
+  | 'publication'
+  | 'actualite'
+  | 'document';
 
 export interface Post {
   id: string;
-  category: PostCategory;
-  title: LocalizedText;
-  excerpt: LocalizedText;
-  body: LocalizedText;
-  coverImageUrl?: string;
-  videoUrl?: string;
-  documents?: PostDocument[];
+  type: PostType;
+
+  title: string;
+  slug?: string;
+
+  excerpt?: string;
+  content?: string;
+
+  image?: string;
+  coverImage?: string;
+
+  category?: string;
+
+  author?: string;
+
+  publishedAt?: string;
   createdAt: string;
-  updatedAt?: string;
+  updatedAt: string;
+
+  featured?: boolean;
+
+  documentUrl?: string;
+  fileUrl?: string;
+
+  tags?: string[];
+
+  [key: string]: unknown;
 }
 
-export type PostInput = Omit<
-  Post,
-  "id" | "createdAt" | "updatedAt"
->;
+const POSTS_PATH =
+  process.env.GITHUB_POSTS_PATH ||
+  'front/data/posts.json';
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "posts.json");
-
-function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+function normalizePosts(value: unknown): Post[] {
+  if (Array.isArray(value)) {
+    return value as Post[];
   }
 
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, "[]", "utf-8");
-  }
-}
-
-export function getAllPosts(): Post[] {
-  ensureFile();
-
-  try {
-    const raw = fs.readFileSync(DATA_FILE, "utf-8");
-
-    if (!raw.trim()) {
-      return [];
-    }
-
-    const parsed = JSON.parse(raw);
-
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error("Erreur lecture posts.json :", error);
-    return [];
-  }
-}
-
-export function getPostsByCategory(
-  category: PostCategory
-): Post[] {
-  return getAllPosts()
-    .filter((post) => post.category === category)
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() -
-        new Date(a.createdAt).getTime()
+  if (
+    value &&
+    typeof value === 'object' &&
+    Array.isArray(
+      (value as { posts?: unknown }).posts
+    )
+  ) {
+    return (
+      (value as { posts: Post[] }).posts
     );
+  }
+
+  return [];
 }
 
-export function getPostById(id: string): Post | null {
+export async function getPosts(): Promise<Post[]> {
+  const data = await readGitHubJson<unknown>(
+    POSTS_PATH,
+    []
+  );
+
+  return normalizePosts(data);
+}
+
+export async function getPostById(
+  id: string
+): Promise<Post | null> {
+  const posts = await getPosts();
+
   return (
-    getAllPosts().find((post) => post.id === id) ?? null
+    posts.find(
+      (post) => String(post.id) === String(id)
+    ) || null
   );
 }
 
-export function serializePosts(posts: Post[]): string {
-  return JSON.stringify(posts, null, 2) + "\n";
+export async function getPostsByType(
+  type: PostType
+): Promise<Post[]> {
+  const posts = await getPosts();
+
+  return posts
+    .filter((post) => post.type === type)
+    .sort((a, b) => {
+      const dateA = new Date(
+        a.publishedAt ||
+          a.createdAt ||
+          0
+      ).getTime();
+
+      const dateB = new Date(
+        b.publishedAt ||
+          b.createdAt ||
+          0
+      ).getTime();
+
+      return dateB - dateA;
+    });
 }
 
-export function persistPosts(posts: Post[]) {
-  ensureFile();
+export async function createPost(
+  input: Omit<
+    Post,
+    'id' | 'createdAt' | 'updatedAt'
+  >
+): Promise<Post> {
+  const posts = await getPosts();
 
-  fs.writeFileSync(
-    DATA_FILE,
-    serializePosts(posts),
-    "utf-8"
-  );
-}
+  const now = new Date().toISOString();
 
-export function addPost(input: PostInput): Post {
-  const posts = getAllPosts();
-
-  const newPost: Post = {
+  const post: Post = {
     ...input,
+
     id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
+
+    createdAt: now,
+    updatedAt: now,
   };
 
-  posts.push(newPost);
+  posts.unshift(post);
 
-  persistPosts(posts);
+  await writeGitHubJson(
+    posts,
+    `content: add ${post.type} ${post.id}`
+  );
 
-  return newPost;
+  return post;
 }
 
-export function updatePost(
+export async function updatePost(
   id: string,
-  input: PostInput
-): Post | null {
-  const posts = getAllPosts();
+  changes: Partial<Post>
+): Promise<Post> {
+  const posts = await getPosts();
 
   const index = posts.findIndex(
-    (post) => post.id === id
+    (post) =>
+      String(post.id) === String(id)
   );
 
   if (index === -1) {
-    return null;
+    throw new Error(
+      `Publication introuvable : ${id}`
+    );
   }
 
-  const existing = posts[index];
+  const current = posts[index];
 
   const updated: Post = {
-    ...existing,
-    ...input,
-    id: existing.id,
-    createdAt: existing.createdAt,
+    ...current,
+    ...changes,
+
+    id: current.id,
+
+    createdAt: current.createdAt,
+
     updatedAt: new Date().toISOString(),
   };
 
   posts[index] = updated;
 
-  persistPosts(posts);
+  await writeGitHubJson(
+    posts,
+    `content: update ${updated.type} ${updated.id}`
+  );
 
   return updated;
 }
 
-export function deletePost(id: string): void {
-  const posts = getAllPosts().filter(
-    (post) => post.id !== id
+export async function deletePost(
+  id: string
+): Promise<void> {
+  const posts = await getPosts();
+
+  const existing = posts.find(
+    (post) =>
+      String(post.id) === String(id)
   );
 
-  persistPosts(posts);
-}
+  if (!existing) {
+    throw new Error(
+      `Publication introuvable : ${id}`
+    );
+  }
 
-export function getPostsFilePath(): string {
-  return DATA_FILE;
+  const remaining = posts.filter(
+    (post) =>
+      String(post.id) !== String(id)
+  );
+
+  await writeGitHubJson(
+    remaining,
+    `content: delete ${existing.type} ${existing.id}`
+  );
 }
