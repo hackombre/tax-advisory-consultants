@@ -1,1 +1,33 @@
-[]
+[
+  {
+    "category": "documentation",
+    "title": {
+      "fr": "CIRCULAIRES SUR LA LOI DE FINANCES"
+    },
+    "excerpt": {
+      "fr": "CIRCULAIRE SUR LA LF 2021\nCIRCULAIRE SUR LA LF 2022\nCIRCULAIRE SUR LA LF 2023"
+    },
+    "body": {
+      "fr": ""
+    },
+    "documents": [
+      {
+        "id": "7t4n79aa",
+        "name": "Loi-de-finances-2021.pdf",
+        "url": "/uploads/1790417289746-do9tvq.pdf"
+      },
+      {
+        "id": "mjhg8vkp",
+        "name": "CIRCULAIRE LF 2022.pdf",
+        "url": "/uploads/1790417324840-o1eunj.pdf"
+      },
+      {
+        "id": "1vdzb9y0",
+        "name": "CIRCULAIRE LF 2023.pdf",
+        "url": "/uploads/1790417374391-9k7cnw.pdf"
+      }
+    ],
+    "id": "204315d5-621e-4ee6-a496-8d625b07d657",
+    "createdAt": "2026-09-26T10:09:51.993Z"
+  }
+]
